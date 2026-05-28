@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AI Secret Leakage Detector</title>
+    <link rel="stylesheet" href="/static/style.css">
+  </head>
+  <body>
+    <main class="container">
+      <h1>AI Secret Leakage Detector</h1>
+
+      <section>
+        <h2>Scan Text</h2>
+        <form id="text-form">
+          <textarea id="text-input" name="text" rows="10" placeholder="Paste a prompt or text here"></textarea>
+          <button type="submit">Scan Text</button>
+        </form>
+      </section>
+
+      <section>
+        <h2>Scan File</h2>
+        <form id="file-form" enctype="multipart/form-data">
+          <input id="file-input" type="file" name="file" accept=".txt,.env,.json,.md">
+          <button type="submit">Scan File</button>
+        </form>
+      </section>
+
+      <section id="error-panel" class="status error" hidden></section>
+
+      <section id="results" hidden>
+        <div class="result-header">
+          <h2>Scan Result</h2>
+          <div id="risk-score" class="risk-score"></div>
+        </div>
+
+        <h3>Detected Secrets</h3>
+        <div id="detections"></div>
+
+        <h3>Sanitized Output</h3>
+        <pre id="sanitized-output"></pre>
+      </section>
+    </main>
+
+    <script>
+      const textForm = document.querySelector("#text-form");
+      const fileForm = document.querySelector("#file-form");
+      const errorPanel = document.querySelector("#error-panel");
+      const resultsPanel = document.querySelector("#results");
+      const riskScore = document.querySelector("#risk-score");
+      const detections = document.querySelector("#detections");
+      const sanitizedOutput = document.querySelector("#sanitized-output");
+
+      textForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const formData = new FormData();
+        formData.append("text", document.querySelector("#text-input").value);
+        await scan("/scan/text", formData);
+      });
+
+      fileForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const input = document.querySelector("#file-input");
+        const formData = new FormData();
+
+        if (input.files.length === 0) {
+          showError("Please choose a file to scan.");
+          resultsPanel.hidden = true;
+          return;
+        }
+
+        formData.append("file", input.files[0]);
+        await scan("/scan/file", formData);
+      });
+
+      async function scan(url, formData) {
+        clearError();
+        resultsPanel.hidden = true;
+
+        try {
+          const response = await fetch(url, {
+            method: "POST",
+            body: formData,
+          });
+          const body = await response.json();
+
+          if (!response.ok) {
+            showError(formatError(body.detail));
+            return;
+          }
+
+          renderResults(body);
+        } catch (error) {
+          showError("The scan could not be completed.");
+        }
+      }
+
+      function renderResults(result) {
+        riskScore.textContent = `Risk score: ${result.risk_score}`;
+        sanitizedOutput.textContent = result.sanitized_output;
+
+        detections.innerHTML = "";
+        if (result.detections.length === 0) {
+          const empty = document.createElement("p");
+          empty.className = "empty-state";
+          empty.textContent = "No secrets detected.";
+          detections.appendChild(empty);
+        } else {
+          const list = document.createElement("ul");
+          list.className = "detection-list";
+
+          result.detections.forEach((detection) => {
+            const item = document.createElement("li");
+            item.innerHTML = `
+              <strong>${escapeHtml(detection.type)}</strong>
+              <span class="severity">${escapeHtml(detection.severity)}</span>
+              <code>${escapeHtml(detection.masked_value)}</code>
+            `;
+            list.appendChild(item);
+          });
+
+          detections.appendChild(list);
+        }
+
+        resultsPanel.hidden = false;
+      }
+
+      function showError(message) {
+        errorPanel.textContent = message;
+        errorPanel.hidden = false;
+      }
+
+      function clearError() {
+        errorPanel.textContent = "";
+        errorPanel.hidden = true;
+      }
+
+      function formatError(detail) {
+        if (typeof detail === "string") {
+          return detail;
+        }
+
+        return "The scan could not be completed.";
+      }
+
+      function escapeHtml(value) {
+        return String(value)
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#039;");
+      }
+    </script>
+  </body>
+</html>
