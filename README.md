@@ -1,5 +1,7 @@
 # AI Secret Leakage Detector
 
+[![Tests](https://github.com/omer-shen-tzur/secret-leakage-detector/actions/workflows/tests.yml/badge.svg)](https://github.com/omer-shen-tzur/secret-leakage-detector/actions/workflows/tests.yml)
+
 AI Secret Leakage Detector is a simple FastAPI MVP that scans pasted prompts and uploaded text-based files before they are sent to an AI model.
 
 The project is designed as a practical AI security middleware demo. It helps identify likely secrets, masks them, and returns a sanitized version of the input with a basic risk score.
@@ -100,8 +102,11 @@ app/
   static/            CSS
 
 tests/
-  test_api.py        API route validation tests
-  test_detector.py   Detector tests
+  conftest.py         Shared pytest fixtures
+  secret_samples.py   Runtime-built fake secret values for tests
+  test_api.py         API route validation tests
+  test_detector.py    Detector tests
+  test_file_utils.py  File extension/decoding tests
 ```
 
 ## Run Locally
@@ -123,6 +128,41 @@ Open:
 ```text
 http://127.0.0.1:8000/
 ```
+
+## Testing
+
+Install test dependencies:
+
+```bash
+pip install -r requirements-dev.txt
+```
+
+Run the test suite:
+
+```bash
+python -m pytest
+```
+
+Run with a coverage report:
+
+```bash
+python -m pytest --cov=app --cov-report=term-missing
+```
+
+What's covered:
+
+- `app/detector.py`: every secret pattern (AWS access key ID, AWS secret access key, OpenAI key, GitHub token, JWT, generic password/API key/secret assignments), including near-miss/false-positive cases, case-insensitivity, quoted vs. unquoted values, overlapping matches, detection ordering, masking, and risk score capping.
+- `app/file_utils.py`: allowed/blocked extensions (including uppercase), non-UTF-8 and binary content, empty and whitespace-only files.
+- `app/main.py`: the `/scan/text` and `/scan/file` routes, via FastAPI's `TestClient`.
+
+Test secrets are never written as real-looking literals. Patterns like AWS access keys or OpenAI keys are assembled at runtime from inert parts (e.g. `"AKIA" + "X" * 16`) so they satisfy the detector's regexes without tripping GitHub push protection or other secret scanners.
+
+CI (`.github/workflows/tests.yml`) runs on every push and pull request across a matrix of:
+
+- OS: `ubuntu-latest`, `ubuntu-24.04-arm` (ARM64)
+- Python: `3.11`, `3.12`
+
+Each run produces a coverage summary and a JUnit XML report, uploaded as a build artifact.
 
 ## Run With Docker
 
