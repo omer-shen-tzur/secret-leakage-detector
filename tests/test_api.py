@@ -1,3 +1,4 @@
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -131,3 +132,49 @@ def test_scan_file_rejects_binary_content():
 
     assert response.status_code == 400
     assert response.json()["detail"] == "Binary files are not supported."
+
+
+def test_scan_file_rejects_non_utf8_content():
+    response = client.post(
+        "/scan/file",
+        files={"file": ("sample.txt", b"caf\xe9 not valid utf-8", "text/plain")},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "File must be readable as UTF-8 text."
+
+
+@pytest.mark.parametrize(
+    "filename",
+    [
+        pytest.param("sample.ENV", id="uppercase-env-extension"),
+        pytest.param("CONFIG.PY", id="uppercase-py-extension"),
+    ],
+)
+def test_scan_file_accepts_uppercase_extensions(filename):
+    response = client.post(
+        "/scan/file",
+        files={"file": (filename, b"password=supersecretvalue", "text/plain")},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["filename"] == filename
+    assert body["detected_types"] == ["Generic Secret Assignment"]
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        pytest.param(b"", id="empty-file"),
+        pytest.param(b"   \n\t  ", id="whitespace-only-file"),
+    ],
+)
+def test_scan_file_rejects_empty_or_whitespace_only_content(content):
+    response = client.post(
+        "/scan/file",
+        files={"file": ("sample.txt", content, "text/plain")},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Uploaded file cannot be empty."
